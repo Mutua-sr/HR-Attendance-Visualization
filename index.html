@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Workforce Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" href="css/main.css">
+<link rel="icon" href="data:,">
+<style>
+/* ── Auth nav additions ── */
+.nav-user-area{display:flex;align-items:center;gap:10px;margin-left:auto;padding-left:12px}
+#nav-user{font-size:12px;font-weight:600;color:var(--tx)}
+.nav-role-badge{font-size:10px;font-weight:700;letter-spacing:.7px;padding:2px 8px;border-radius:20px;text-transform:uppercase}
+.role-admin{background:rgba(79,142,247,.13);color:#4f8ef7;border:1px solid rgba(79,142,247,.3)}
+.role-viewer{background:rgba(62,207,142,.12);color:#3ecf8e;border:1px solid rgba(62,207,142,.25)}
+.nav-logout-btn{font-size:11px;font-weight:600;padding:5px 11px;border-radius:6px;border:1px solid var(--bd);background:transparent;color:var(--tx3);cursor:pointer;transition:background .15s,color .15s;white-space:nowrap}
+.nav-logout-btn:hover{background:#fee2e2;color:#dc2626;border-color:#fca5a5}
+</style>
+</head>
+<body>
+
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand">Workforce <span>Analytics</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPage('home')">Home</button>
+    <button class="nav-tab" id="tab-analysis" onclick="showPage('analysis')">Week Analysis</button>
+    <button class="nav-tab" onclick="showPage('compare')">Comparison</button>
+    <button class="nav-tab" onclick="showPage('staff')">Staff Lookup</button>
+    <button class="nav-tab" onclick="showPage('daily')">Daily Check</button>
+    <button class="nav-tab" data-role="admin" onclick="showPage('settings')">Settings</button>
+  </div>
+  <div class="nav-right">
+    <button class="btn sm" data-role="admin" onclick="exportBackup()">↓ Backup</button>
+    <button class="btn sm primary" data-role="admin" onclick="openUploadModal()">＋ New week</button>
+    <div class="nav-user-area">
+      <span id="nav-user"></span>
+      <span id="nav-role" class="nav-role-badge"></span>
+      <button class="nav-logout-btn" onclick="authLogout()">Sign out</button>
+    </div>
+  </div>
+</nav>
+
+<div class="content">
+
+<!-- ═══════════════════ HOME ═══════════════════ -->
+<div id="page-home" class="page active">
+  <div class="sec-hdr" style="margin-bottom:14px">
+    <div>
+      <div class="sec-title">All weeks</div>
+      <div class="sec-sub" id="home-sub">No data yet — upload your first week</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn sm" data-role="admin" onclick="document.getElementById('restore-input').click()">↑ Restore backup</button>
+      <input type="file" id="restore-input" accept=".json" style="display:none" onchange="restoreBackup(this)">
+    </div>
+  </div>
+
+  <!-- 8-week rolling trend -->
+  <div class="trend-wrap" id="trend-wrap" style="display:none">
+    <div class="card-title">Attendance rate — rolling trend</div>
+    <div class="chart-box"><canvas id="trend-chart" role="img" aria-label="Rolling attendance trend"></canvas></div>
+  </div>
+
+  <div id="week-grid" class="week-grid"></div>
+
+  <div id="home-empty" class="empty">
+    <div class="empty-icon">📊</div>
+    <h3>No weeks uploaded yet</h3>
+    <p>Click <strong>＋ New week</strong> to upload your first attendance data</p>
+  </div>
+</div>
+
+<!-- ═══════════════════ ANALYSIS ═══════════════════ -->
+<div id="page-analysis" class="page">
+  <div id="analysis-empty" class="empty">
+    <div class="empty-icon">📋</div>
+    <h3>Select a week to analyse</h3>
+    <p>Go to Home and click on a week card</p>
+  </div>
+  <div id="analysis-content" style="display:none">
+    <div class="sec-hdr">
+      <div>
+        <div class="sec-title" id="analysis-title">Week Analysis</div>
+        <div class="sec-sub" id="analysis-sub"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn sm" onclick="exportWeekExcel()">↓ Excel</button>
+        <button class="btn sm" onclick="window.print()">↓ Print</button>
+      </div>
+    </div>
+    <div id="kpi-r1" class="kpi-grid"></div>
+    <div id="kpi-r2" class="kpi-grid" style="margin-bottom:16px"></div>
+    <div id="analysis-alert"></div>
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Compliance</div>
+        <div class="chart-box"><canvas id="pie-chart" role="img" aria-label="Compliance pie chart"></canvas></div>
+        <div id="pie-legend" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:10px;color:var(--tx2)"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Location summary</div>
+        <div id="loc-summary"></div>
+      </div>
+    </div>
+    <div class="sec-hdr">
+      <div class="sec-title">Employee register</div>
+      <span class="row-count" id="reg-count"></span>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <!-- 3 core filters -->
+      <div class="filter-bar" style="margin-bottom:6px">
+        <input type="text" id="f-name" placeholder="Search name…" oninput="filterReg()" style="min-width:180px">
+        <select id="f-loc" onchange="filterReg()">
+          <option value="">All locations</option>
+          <option value="headoffice">Head Office</option>
+          <option value="plantoffice">Plant Office</option>
+          <option value="region a sites">Region A Sites</option>
+          <option value="region b sites">Region B Sites</option>
+          <option value="hybrid">Hybrid</option>
+          <option value="overseas">Overseas Site</option>
+        </select>
+        <select id="f-status" onchange="filterReg()">
+          <option value="">All statuses</option>
+          <option value="full">Full</option>
+          <option value="good">Good</option>
+          <option value="mod">Moderate</option>
+          <option value="poor">Poor</option>
+          <option value="abs">Absent</option>
+          <option value="leave">Leave</option>
+          <option value="late">Late</option>
+          <option value="ll">Late + Left Early</option>
+          <option value="early">Left Early</option>
+          <option value="ot">Overtime</option>
+          <option value="hybrid">Hybrid</option>
+        </select>
+        <!-- hidden fields kept for filterReg() compatibility -->
+        <select id="f-hrs"   onchange="filterReg()" style="display:none"><option value=""></option></select>
+        <select id="f-leave" onchange="filterReg()" style="display:none"><option value=""></option></select>
+        <select id="f-late"  onchange="filterReg()" style="display:none"><option value=""></option></select>
+        <select id="f-ot"    onchange="filterReg()" style="display:none"><option value=""></option></select>
+        <select id="f-early" onchange="filterReg()" style="display:none"><option value=""></option></select>
+        <select id="f-inc"   onchange="filterReg()" style="display:none"><option value=""></option></select>
+        <span class="row-count" id="reg-count" style="margin-left:auto"></span>
+      </div>
+      <!-- Quick-filter chips -->
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px" id="chip-bar">
+        <button class="chip active" data-action="all" onclick="chipClearAll(this)">All</button>
+        <button class="chip" data-f="f-status" data-v="abs" onclick="chipSet(this)">Absent</button>
+        <button class="chip" data-f="f-status" data-v="leave" onclick="chipSet(this)">On leave</button>
+        <button class="chip" data-f="f-status" data-v="full" onclick="chipSet(this)">Full</button>
+        <button class="chip" data-f="f-status" data-v="good" onclick="chipSet(this)">Good</button>
+        <button class="chip" data-f="f-present" data-v="y" onclick="chipSet(this)">Present</button>
+        <button class="chip" data-f="f-status" data-v="late" onclick="chipSet(this)">Late</button>
+        <button class="chip" data-f="f-status" data-v="ll" onclick="chipSet(this)">Late + left early</button>
+        <button class="chip" data-f="f-status" data-v="ot" onclick="chipSet(this)">Overtime</button>
+        <button class="chip" data-f="f-status" data-v="poor" onclick="chipSet(this)">Poor</button>
+        <button class="chip chip-warn" data-f="f-inc" data-v="y" onclick="chipSet(this)">Incomplete</button>
+      </div>
+      <!-- hidden selects for chip filters not already in the filter bar -->
+      <select id="f-present" onchange="filterReg()" style="display:none"><option value=""></option><option value="y">y</option></select>
+      <div class="tbl-wrap" style="max-height:460px;overflow-y:auto">
+        <table id="reg-table">
+          <thead><tr id="reg-thead"></tr></thead>
+          <tbody id="reg-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ COMPARISON ═══════════════════ -->
+<div id="page-compare" class="page">
+  <div class="sec-hdr" style="margin-bottom:12px">
+    <div class="sec-title">Week comparison</div>
+    <div class="sec-sub">Select 2 or more weeks to compare</div>
+  </div>
+  <div id="cmp-chips" class="cmp-chips"></div>
+  <div id="cmp-empty" class="empty">
+    <div class="empty-icon">⚖️</div>
+    <h3>Select at least 2 weeks</h3>
+    <p>Use the chips above to pick which weeks to compare</p>
+  </div>
+  <div id="cmp-content" style="display:none">
+    <div id="cmp-kpis" class="kpi-grid" style="margin-bottom:14px"></div>
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Attendance rate — selected weeks</div>
+        <div class="chart-box-lg"><canvas id="cmp-bar" role="img" aria-label="Comparison bar chart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Late hours vs OT hours</div>
+        <div class="chart-box-lg"><canvas id="cmp-late-ot" role="img" aria-label="Late vs OT comparison"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Week-by-week detail</div>
+      <div class="tbl-wrap">
+        <table id="cmp-table">
+          <thead><tr id="cmp-thead"></tr></thead>
+          <tbody id="cmp-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Chronic absentees (all selected weeks)</div>
+        <div id="chronic-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Most improved (absent → present)</div>
+        <div id="improved-list"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ STAFF LOOKUP ═══════════════════ -->
+<div id="page-staff" class="page">
+  <div class="staff-layout">
+    <!-- LEFT: directory sidebar -->
+    <div class="staff-sidebar" id="staff-sidebar">
+      <div class="staff-search-wrap">
+        <input type="text" id="staff-search" placeholder="Search staff…" oninput="staffSearch()" autocomplete="off">
+        <div id="staff-suggestions"></div>
+      </div>
+      <div class="staff-dir-filters">
+        <select id="staff-dir-loc" onchange="renderStaffDir()">
+          <option value="">All locations</option>
+          <option value="Head Office">Head Office</option>
+          <option value="Plant Office">Plant Office</option>
+          <option value="Region A Sites">Region A Sites</option>
+          <option value="Region B Sites">Region B Sites</option>
+          <option value="Overseas Site">Overseas Site</option>
+          <option value="Hybrid">Hybrid</option>
+        </select>
+      </div>
+      <div class="staff-dir-count" id="staff-dir-count"></div>
+      <div class="staff-dir-list" id="staff-dir-list"></div>
+    </div>
+    <!-- RIGHT: profile panel -->
+    <div class="staff-profile" id="staff-profile">
+      <div id="staff-empty" class="empty staff-empty-state">
+        <div class="empty-icon">👤</div>
+        <h3>Select a staff member</h3>
+        <p>Click any name in the directory to see their full attendance profile</p>
+      </div>
+      <div id="staff-content" style="display:none">
+        <!-- Identity + condensed KPI strip -->
+        <div class="staff-prof-hdr card" style="margin-bottom:12px">
+          <div class="staff-prof-top">
+            <div class="staff-avatar" id="staff-avatar"></div>
+            <div class="staff-prof-info">
+              <div class="staff-prof-name" id="staff-name-display"></div>
+              <div class="staff-prof-meta">
+                <span id="staff-loc-display"></span>
+                <span id="staff-role-badge"></span>
+              </div>
+            </div>
+            <div class="staff-prof-actions">
+              <button class="btn sm" onclick="exportStaffPDF()" title="Export profile">↓ Export</button>
+            </div>
+          </div>
+          <div id="staff-kpis" class="kpi-line"></div>
+        </div>
+
+        <!-- Attendance trend -->
+        <div class="card staff-trend-card" style="margin-bottom:12px">
+          <div class="staff-section-hdr">
+            <div class="card-title">Attendance trend</div>
+            <div class="staff-trend-avg" id="staff-trend-avg"></div>
+          </div>
+          <div id="staff-trend-chart"></div>
+        </div>
+
+        <!-- Week explorer: each row expands in place to the daily register -->
+        <div class="card">
+          <div class="staff-section-hdr">
+            <div class="card-title">Weeks on record</div>
+            <div class="staff-grid-legend">
+              <span class="day-ok">●</span> Present
+              <span class="day-late">●</span> Late
+              <span class="day-ll">●</span> Late+Early
+              <span class="day-ot">●</span> OT
+              <span class="day-abs">●</span> Absent
+              <span class="day-inc">●</span> Incomplete
+              <span class="day-none">●</span> No data
+            </div>
+          </div>
+          <div id="staff-week-explorer"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ DAILY CHECK ═══════════════════ -->
+<div id="page-daily" class="page">
+  <div class="card" style="max-width:920px;margin:0 auto 14px">
+    <div class="card-title">Daily present / absent check</div>
+    <p style="font-size:11px;color:var(--tx3);margin:2px 0 12px">
+      Drop today's biometric export (Head Office + Plant Office only — on-site staff are covered by the
+      weekly site-log upload, not this check) to see who clocked in and who didn't. Add a leave
+      applications export too, and anyone on approved/pending leave that day is marked "On leave"
+      instead of absent. This is a one-off check — nothing here is saved to the app; you only get a file to download.
+    </p>
+
+    <div style="margin-bottom:12px">
+      <label style="font-size:10px;color:var(--tx3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:4px">Date being checked</label>
+      <input type="date" id="daily-date" style="padding:6px 10px;border:.5px solid var(--bd);border-radius:var(--rs);font-size:12px;background:var(--bg);color:var(--tx);outline:none">
+    </div>
+
+    <div class="upload-zone" id="daily-drop-zone"
+         ondragover="event.preventDefault();this.classList.add('drag')"
+         ondragleave="this.classList.remove('drag')"
+         ondrop="handleDailyDrop(event)"
+         onclick="document.getElementById('daily-file-input').click()">
+      <h3>Drop today's attendance file(s) here</h3>
+      <p>or click to browse · .xlsx / .xls · biometric log required, leave applications optional</p>
+    </div>
+    <input type="file" id="daily-file-input" multiple accept=".xlsx,.xls" style="display:none" onchange="handleDailyFiles(this.files)">
+
+    <div id="daily-file-list" style="margin-top:10px;display:none"></div>
+
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn primary" id="daily-run-btn" onclick="processDailyFiles()" style="display:none">Check attendance</button>
+      <button class="btn sm" onclick="resetDailyCheck()">Clear</button>
+      <span id="daily-status" style="font-size:11px;color:var(--tx3)"></span>
+    </div>
+  </div>
+
+  <div id="daily-results" style="max-width:920px;margin:0 auto;display:none">
+    <div class="card" style="margin-bottom:12px">
+      <div class="staff-section-hdr">
+        <div class="card-title" id="daily-results-title">Results</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn sm" onclick="printDailyReport()">↓ Download PDF</button>
+          <button class="btn sm" onclick="downloadDailyReport()">↓ Download Excel</button>
+        </div>
+      </div>
+      <div id="daily-kpis" class="kpi-line" style="margin-top:0;padding-top:0;border-top:none"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">Present (<span id="daily-present-count">0</span>)</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Location</th><th class="nm">Clock In</th><th class="nm">Clock Out</th></tr></thead>
+          <tbody id="daily-present-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">On Leave (<span id="daily-leave-count">0</span>)</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Location</th><th>Leave Type</th></tr></thead>
+          <tbody id="daily-leave-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Absent (<span id="daily-absent-count">0</span>)</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Location</th></tr></thead>
+          <tbody id="daily-absent-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════ SETTINGS ═══════════════════ -->
+<div id="page-settings" class="page">
+  <div class="sec-title" style="margin-bottom:16px">Settings</div>
+  <div class="g2">
+    <div>
+      <div class="settings-section card">
+        <h3>Attendance thresholds</h3>
+        <div class="setting-row">
+          <div><div class="setting-label">Full attendance</div><div class="setting-desc">Minimum % to classify as Full</div></div>
+          <input type="number" id="s-full" value="100" min="80" max="100"> %
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Good attendance</div><div class="setting-desc">Minimum % to classify as Good</div></div>
+          <input type="number" id="s-good" value="80" min="60" max="99"> %
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Moderate attendance</div><div class="setting-desc">Minimum % to classify as Moderate</div></div>
+          <input type="number" id="s-mod" value="60" min="40" max="79"> %
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn primary sm" onclick="saveSettings()">Save thresholds</button>
+        </div>
+      </div>
+      <div class="settings-section card" style="margin-top:12px">
+        <h3>Scheduled hours per day</h3>
+        <p style="font-size:11px;color:var(--tx3);margin-bottom:10px">Used to calculate required hours and deficit. Set the contracted work hours per day for each location group.</p>
+        <div class="setting-row">
+          <div><div class="setting-label">Head Office</div><div class="setting-desc">07:00–17:00</div></div>
+          <input type="number" id="s-sm-headoffice" value="10" min="6" max="12" step="0.5"> h/day
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Plant Office</div><div class="setting-desc">07:30–17:00</div></div>
+          <input type="number" id="s-sm-plant" value="9.5" min="6" max="12" step="0.5"> h/day
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Region A Sites</div><div class="setting-desc">08:00–17:00</div></div>
+          <input type="number" id="s-sm-regiona" value="9" min="6" max="12" step="0.5"> h/day
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Region B Sites</div><div class="setting-desc">08:00–17:00</div></div>
+          <input type="number" id="s-sm-regionb" value="9" min="6" max="12" step="0.5"> h/day
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn primary sm" onclick="saveSettings()">Save all settings</button>
+        </div>
+      </div>
+      <div class="settings-section card" style="margin-top:12px">
+        <h3>Data management</h3>
+        <div class="setting-row">
+          <div><div class="setting-label">Export all data</div><div class="setting-desc">Download a full JSON backup</div></div>
+          <button class="btn sm" onclick="exportBackup()">↓ Backup JSON</button>
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Restore from backup</div><div class="setting-desc">Merge or replace from JSON</div></div>
+          <button class="btn sm" onclick="document.getElementById('restore-input2').click()">↑ Restore JSON</button>
+          <input type="file" id="restore-input2" accept=".json" style="display:none" onchange="restoreBackup(this)">
+        </div>
+        <div class="setting-row">
+          <div><div class="setting-label">Clear all data</div><div class="setting-desc">Delete all weeks from browser storage</div></div>
+          <button class="btn danger sm" onclick="clearAllData()">Clear all</button>
+        </div>
+      </div>
+    </div>
+    <div class="settings-section card">
+      <h3>Staff register</h3>
+      <p style="font-size:11px;color:var(--tx3);margin-bottom:10px">The canonical staff list is embedded. You can update it here — paste the new Staff_Primary_Work_Station data or upload the file.</p>
+      <div style="margin-bottom:8px">
+        <button class="btn sm" onclick="document.getElementById('staff-reg-input').click()">↑ Upload new staff register</button>
+        <input type="file" id="staff-reg-input" accept=".xlsx,.xls" style="display:none" onchange="uploadStaffRegister(this)">
+      </div>
+      <div id="staff-reg-status" class="alert alert-info" style="display:none"></div>
+      <div style="font-size:10px;color:var(--tx3);margin-top:8px" id="staff-reg-count"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- .content -->
+
+<!-- ═══════════════════ UPLOAD MODAL ═══════════════════ -->
+<div class="modal-bg" id="upload-modal">
+  <div class="modal" style="max-width:640px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px">
+      <div>
+        <h2 style="margin-bottom:3px">Upload new week</h2>
+        <p style="margin:0">Drop files — the app detects types automatically. Use selectors to override.</p>
+      </div>
+      <button onclick="closeUploadModal()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--tx3);padding:0 0 0 12px;line-height:1">✕</button>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="upload-zone" id="drop-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="handleDragOver(event)"
+         ondragleave="handleDragLeave(event)"
+         ondrop="handleDrop(event)"
+         style="margin-top:12px">
+      <div style="font-size:22px;margin-bottom:6px">📂</div>
+      <h3>Drop files here or click to browse</h3>
+      <p>Head Office bio · Plant bio · Site master · Leave applications — any filename</p>
+      <input type="file" id="file-input" multiple accept=".xlsx,.xls" style="display:none" onchange="handleFiles(this.files)">
+    </div>
+
+    <!-- File list -->
+    <div id="file-list" style="margin-top:10px;display:none">
+      <div style="font-size:10px;font-weight:600;color:var(--tx3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Files added</div>
+      <div id="file-rows"></div>
+    </div>
+
+    <!-- Week info row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+      <div>
+        <label style="font-size:11px;color:var(--tx3)">Week label</label>
+        <input type="text" id="wk-label" placeholder="Week 20" style="width:100%;margin-top:4px" oninput="autoFillWeekLabel()">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--tx3)">Date range</label>
+        <input type="text" id="wk-dates" placeholder="11–16 May 2026" style="width:100%;margin-top:4px">
+      </div>
+    </div>
+
+    <!-- Excluded days — collapsible -->
+    <details style="margin-top:10px;border:.5px solid var(--bd);border-radius:var(--rs)">
+      <summary style="padding:8px 12px;cursor:pointer;font-size:11px;font-weight:600;color:var(--tx);list-style:none;display:flex;align-items:center;justify-content:space-between">
+        <span>Excluded days <span style="font-weight:400;color:var(--tx3)">(holidays, WFH — optional)</span></span>
+        <button class="btn sm" onclick="event.preventDefault();addExclusionRow()" style="font-size:10px;padding:3px 9px">+ Add</button>
+      </summary>
+      <div style="padding:0 12px 10px">
+        <div id="excl-rows" style="margin-top:6px"></div>
+        <div style="font-size:9px;color:var(--tx4);margin-top:6px">Days subtracted from each employee's scheduled total. e.g. 2026-05-01 = Labour Day</div>
+      </div>
+    </details>
+
+    <!-- Progress -->
+    <div class="progress-bar" id="proc-progress" style="display:none;margin-top:12px"><div class="progress-fill" id="proc-fill" style="width:0%"></div></div>
+    <ul class="step-list" id="proc-steps" style="display:none;margin-top:8px"></ul>
+
+    <!-- Preview -->
+    <div id="proc-preview" style="display:none;margin-top:12px">
+      <div class="alert alert-ok" id="preview-summary"></div>
+      <div class="tbl-wrap" style="max-height:180px;overflow-y:auto;margin-top:8px">
+        <table id="preview-table">
+          <thead><tr><th>Name</th><th>Location</th><th class="nm">Schedule</th><th class="nm">Present</th><th class="nm">Absent</th><th>Status</th></tr></thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn" onclick="closeUploadModal()">Cancel</button>
+      <button class="btn primary" id="proc-btn" onclick="processFiles()">Process files</button>
+      <button class="btn primary" id="save-btn" style="display:none" onclick="saveWeek()">✓ Save week</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ PRINT-ONLY: Daily attendance report ═══════════════
+     Hidden on screen; shown only inside a print/PDF context. Nothing here
+     is persisted — printDailyReport() fills it in from dailyResult, then
+     calls window.print(), which lets the user "Save as PDF". -->
+<div id="print-root">
+  <div class="print-hdr">
+    <div class="print-brand">Workforce Analytics</div>
+    <h1>Daily Attendance Report</h1>
+    <div class="print-meta" id="print-date"></div>
+  </div>
+  <div class="print-summary" id="print-summary"></div>
+  <h2>Present (<span id="print-present-count">0</span>)</h2>
+  <table id="print-present-table">
+    <thead><tr><th>Name</th><th>Location</th><th>Clock In</th><th>Clock Out</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <h2>On Leave (<span id="print-leave-count">0</span>)</h2>
+  <table id="print-leave-table">
+    <thead><tr><th>Name</th><th>Location</th><th>Leave Type</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <h2>Absent (<span id="print-absent-count">0</span>)</h2>
+  <table id="print-absent-table">
+    <thead><tr><th>Name</th><th>Location</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="print-footer">Generated <span id="print-generated"></span></div>
+</div>
+
+<script src="js/auth.js"></script>
+<script src="js/data.js"></script>
+<script src="js/parse.js"></script>
+<script src="js/compute.js"></script>
+<script src="js/db.js"></script>
+<script src="js/upload.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/render-home.js"></script>
+<script src="js/render-analysis.js"></script>
+<script src="js/render-compare.js"></script>
+<script src="js/staff.js"></script>
+<script src="js/daily.js"></script>
+<script src="js/app.js"></script>
+<script>
+  // Auth guard — redirect to login if no session
+  (function(){
+    const u = authRequire();
+    if (!u) return; // authRequire already redirected
+    // Apply role-based UI after DOM is ready
+    document.addEventListener('DOMContentLoaded', authApplyRoleUI);
+    // Also apply immediately in case DOM is already ready
+    if (document.readyState !== 'loading') authApplyRoleUI();
+  })();
+</script>
+</body>
+</html>

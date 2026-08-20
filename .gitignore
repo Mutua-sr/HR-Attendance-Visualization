@@ -1,0 +1,30 @@
+# Local credentials - NEVER commit
+config.php
+.env
+.env.*
+!.env.example
+
+# Database dumps / backups
+*.sql.gz
+*.dump
+backup*/
+Back-up*
+*.zip
+
+# Uploaded source data (contains real staff records)
+uploads/
+data/
+*.xlsx
+*.xls
+*.csv
+
+# Dependencies / build
+node_modules/
+vendor/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
