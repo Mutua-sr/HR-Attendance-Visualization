@@ -87,3 +87,4 @@ workforce-analytics/
 | "Table not found" | Import `db/schema.sql` in phpMyAdmin |
 | `#1064` syntax error in phpMyAdmin | You imported the wrong schema — use the MySQL version |
 | Blank app, no data | Open browser DevTools → Network → check `/api/weeks` response |
+"# HR-Attendance-Visualization" 
